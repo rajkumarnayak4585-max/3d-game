@@ -1,0 +1,347 @@
+
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raj 3D Racing Game</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#07111f;color:white;font-family:Arial,sans-serif;text-align:center}
+header{padding:18px;background:#06152b;border-bottom:2px solid #00c8ff}
+header h1{margin:0;color:#00c8ff;font-size:27px}
+header p{margin:8px 0 0;color:#dbeafe}
+.game{width:min(95%,800px);margin:20px auto}
+.hud{display:flex;justify-content:space-around;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.hud div{background:#10243d;border:1px solid #00c8ff;border-radius:9px;padding:10px 18px}
+canvas{width:100%;height:auto;display:block;background:#7dd3fc;border:2px solid #00c8ff;border-radius:12px}
+button{background:#00bfff;color:#001225;border:0;border-radius:9px;padding:12px 19px;margin:6px;font-size:16px;font-weight:bold;cursor:pointer}
+button:hover{background:#7de7ff}
+.controls{display:flex;justify-content:center;flex-wrap:wrap;margin:10px}
+.help{color:#cbd5e1;line-height:1.8;padding:10px}
+footer{padding:20px;background:#06152b;color:#9ecaff;margin-top:25px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏎️ RAJ 3D RACING</h1>
+  <p>Made by Raj Kumar Nayak | Class 9th</p>
+</header>
+
+<div class="game">
+  <div class="hud">
+    <div>🏆 स्कोर: <span id="score">0</span></div>
+    <div>⚡ स्पीड: <span id="speed">0</span></div>
+    <div>❤️ लाइफ: <span id="lives">3</span></div>
+  </div>
+
+  <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+  <div>
+    <button id="startBtn" onclick="startGame()">▶ START GAME</button>
+    <button onclick="resetGame()">↻ RESTART</button>
+  </div>
+
+  <div class="controls">
+    <button onpointerdown="hold('left',true)" onpointerup="hold('left',false)" onpointerleave="hold('left',false)" onpointercancel="hold('left',false)">⬅ LEFT</button>
+    <button onpointerdown="hold('up',true)" onpointerup="hold('up',false)" onpointerleave="hold('up',false)" onpointercancel="hold('up',false)">⬆ GO</button>
+    <button onpointerdown="hold('right',true)" onpointerup="hold('right',false)" onpointerleave="hold('right',false)" onpointercancel="hold('right',false)">RIGHT ➡</button>
+  </div>
+
+  <div class="help">
+    <b>कीबोर्ड कंट्रोल:</b><br>
+    ⬅ ➡ या A / D = कार मोड़ें<br>
+    ⬆ या W = स्पीड बढ़ाएँ<br>
+    ⬇ या S = ब्रेक लगाएँ<br>
+    बाधाओं से बचें और ज्यादा स्कोर बनाएँ!
+  </div>
+</div>
+
+<footer>
+  <h3>🎮 Raj Kumar Nayak</h3>
+  Class 9th | My First 3D-Style Racing Game
+</footer>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+
+let player, obstacles, score, lives, speed, running;
+let keys = {};
+let lastTime = 0, spawnTimer = 0, roadOffset = 0;
+let animationId = 0;
+
+function init(){
+  player = {x:W/2, y:H-95, w:44, h:76};
+  obstacles = [];
+  score = 0;
+  lives = 3;
+  speed = 0;
+  running = false;
+  spawnTimer = 0;
+  roadOffset = 0;
+  updateHUD();
+  draw();
+}
+
+function roadAt(y){
+  const t = y/H;
+  const half = 100 + t*270;
+  return {left:W/2-half, right:W/2+half, half};
+}
+
+function polygon(points, color){
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.moveTo(points[0][0],points[0][1]);
+  for(let i=1;i<points.length;i++) ctx.lineTo(points[i][0],points[i][1]);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawCar(x,y,w,h,color){
+  ctx.save();
+  ctx.translate(x,y);
+
+  // Wheels
+  ctx.fillStyle="#10151c";
+  ctx.fillRect(-w*.55,h*.2,w*.22,h*.27);
+  ctx.fillRect(w*.33,h*.2,w*.22,h*.27);
+  ctx.fillRect(-w*.55,-h*.28,w*.22,h*.27);
+  ctx.fillRect(w*.33,-h*.28,w*.22,h*.27);
+
+  // Body
+  let grad=ctx.createLinearGradient(-w/2,0,w/2,0);
+  grad.addColorStop(0,"#8a0017");
+  grad.addColorStop(.5,color);
+  grad.addColorStop(1,"#690015");
+  ctx.fillStyle=grad;
+  ctx.beginPath();
+  ctx.moveTo(-w*.38,h*.48);
+  ctx.lineTo(-w*.5,h*.16);
+  ctx.lineTo(-w*.43,-h*.30);
+  ctx.lineTo(-w*.26,-h*.48);
+  ctx.lineTo(w*.26,-h*.48);
+  ctx.lineTo(w*.43,-h*.30);
+  ctx.lineTo(w*.5,h*.16);
+  ctx.lineTo(w*.38,h*.48);
+  ctx.closePath();
+  ctx.fill();
+
+  // Windshield
+  polygon([
+    [-w*.29,-h*.18],[-w*.20,-h*.36],
+    [w*.20,-h*.36],[w*.29,-h*.18]
+  ],"#a5e8ff");
+
+  polygon([
+    [-w*.28,-h*.10],[w*.28,-h*.10],
+    [w*.32,h*.12],[-w*.32,h*.12]
+  ],"#163550");
+
+  ctx.fillStyle="#fff4b0";
+  ctx.fillRect(-w*.37,h*.30,w*.19,5);
+  ctx.fillRect(w*.18,h*.30,w*.19,5);
+  ctx.restore();
+}
+
+function draw(){
+  // Sky
+  let sky=ctx.createLinearGradient(0,0,0,H*.55);
+  sky.addColorStop(0,"#0b2251");
+  sky.addColorStop(1,"#42b9ee");
+  ctx.fillStyle=sky;
+  ctx.fillRect(0,0,W,H);
+
+  // Sun
+  ctx.fillStyle="#ffe7a0";
+  ctx.beginPath();
+  ctx.arc(W*.75,H*.18,35,0,Math.PI*2);
+  ctx.fill();
+
+  // Mountains
+  polygon([[0,240],[90,100],[170,220],[260,115],
+    [350,230],[470,130],[590,225],[700,110],[800,220],
+    [800,320],[0,320]],"#285879");
+
+  // Grass
+  ctx.fillStyle="#14713b";
+  ctx.fillRect(0,H*.42,W,H*.58);
+
+  // Road perspective
+  let top=roadAt(H*.30);
+  let bottom=roadAt(H);
+  polygon([[top.left,H*.30],[top.right,H*.30],
+    [bottom.right,H],[bottom.left,H]],"#454b55");
+
+  // Road edges
+  polygon([[top.left-7,H*.30],[top.left,H*.30],
+    [bottom.left,H],[bottom.left-16,H]],"#f8fafc");
+  polygon([[top.right,H*.30],[top.right+7,H*.30],
+    [bottom.right+16,H],[bottom.right,H]],"#f8fafc");
+
+  // Dashed center lines
+  for(let i=0;i<12;i++){
+    let y=((i*58+roadOffset)%420)+H*.25;
+    if(y>H) continue;
+    let r=roadAt(y);
+    let dashH=5+(y/H)*13;
+    ctx.fillStyle="#fff4b0";
+    ctx.fillRect(W/2-3-(y/H)*2,y,6+(y/H)*4,dashH);
+  }
+
+  // Side markers
+  for(let i=0;i<10;i++){
+    let y=((i*65+roadOffset*1.4)%420)+H*.25;
+    if(y>H)continue;
+    let r=roadAt(y);
+    let size=3+y/H*12;
+    ctx.fillStyle=i%2?"#fff":"#ff3030";
+    ctx.fillRect(r.left-size,y,size,size*1.5);
+    ctx.fillRect(r.right,y,size,size*1.5);
+  }
+
+  // Obstacles
+  for(const o of obstacles){
+    drawCar(o.x,o.y,o.w,o.h,o.color);
+  }
+
+  // Player car
+  drawCar(player.x,player.y,player.w,player.h,"#ff173d");
+
+  if(!running && lives>0){
+    ctx.fillStyle="rgba(0,8,24,.55)";
+    ctx.fillRect(0,0,W,H);
+    ctx.textAlign="center";
+    ctx.fillStyle="white";
+    ctx.font="bold 32px Arial";
+    ctx.fillText("3D RACING GAME",W/2,H/2-15);
+    ctx.font="18px Arial";
+    ctx.fillText("START दबाकर खेलें!",W/2,H/2+25);
+  }
+
+  if(lives<=0){
+    ctx.fillStyle="rgba(0,0,0,.75)";
+    ctx.fillRect(0,0,W,H);
+    ctx.textAlign="center";
+    ctx.fillStyle="#ff4865";
+    ctx.font="bold 38px Arial";
+    ctx.fillText("GAME OVER",W/2,H/2-20);
+    ctx.fillStyle="white";
+    ctx.font="22px Arial";
+    ctx.fillText("स्कोर: "+score,W/2,H/2+20);
+    ctx.font="17px Arial";
+    ctx.fillText("RESTART दबाकर फिर खेलें",W/2,H/2+55);
+  }
+}
+
+function updateHUD(){
+  document.getElementById("score").textContent=score;
+  document.getElementById("speed").textContent=Math.round(speed*2);
+  document.getElementById("lives").textContent=lives;
+}
+
+function hold(key,value){keys[key]=value;}
+
+function startGame(){
+  if(lives<=0) init();
+  if(running)return;
+  running=true;
+  lastTime=performance.now();
+  cancelAnimationFrame(animationId);
+  animationId=requestAnimationFrame(loop);
+}
+
+function resetGame(){
+  cancelAnimationFrame(animationId);
+  init();
+  startGame();
+}
+
+function loop(now){
+  if(!running)return;
+  let dt=Math.min((now-lastTime)/16.67,2);
+  lastTime=now;
+
+  if(keys.up || keys.w) speed=Math.min(speed+0.15*dt,12);
+  else if(keys.down || keys.s) speed=Math.max(speed-0.25*dt,1);
+  else speed=Math.min(speed+0.035*dt,8);
+
+  if(speed<1)speed=1;
+
+  const steer=4.5*dt;
+  if(keys.left||keys.a) player.x-=steer*speed/2;
+  if(keys.right||keys.d) player.x+=steer*speed/2;
+
+  let road=roadAt(player.y);
+  player.x=Math.max(road.left+player.w/2+4,
+    Math.min(road.right-player.w/2-4,player.x));
+
+  roadOffset=(roadOffset+speed*dt)%1000;
+  spawnTimer+=dt*speed;
+
+  if(spawnTimer>100){
+    spawnTimer=0;
+    let r=roadAt(H*.47);
+    obstacles.push({
+      x:r.left+35+Math.random()*(r.half*1.55),
+      y:H*.36,w:25,h:44,
+      color:Math.random()>.5?"#ffd22f":"#22d3ee"
+    });
+  }
+
+  for(let i=obstacles.length-1;i>=0;i--){
+    let o=obstacles[i];
+    o.y+=speed*dt*1.5;
+    let scale=o.y/H;
+    o.w=25+scale*22;
+    o.h=44+scale*30;
+
+    if(Math.abs(o.x-player.x)<(o.w+player.w)*.42 &&
+       Math.abs(o.y-player.y)<(o.h+player.h)*.42){
+      obstacles.splice(i,1);
+      lives--;
+      speed=2;
+      if(lives<=0)running=false;
+      continue;
+    }
+
+    if(o.y>H+60){
+      obstacles.splice(i,1);
+      score+=10;
+    }
+  }
+
+  score+=Math.floor(speed*dt*.15);
+  updateHUD();
+  draw();
+
+  if(running) animationId=requestAnimationFrame(loop);
+}
+
+document.addEventListener("keydown",e=>{
+  const k=e.key.toLowerCase();
+  if(["arrowleft","arrowright","arrowup","arrowdown"," "].includes(k))
+    e.preventDefault();
+  if(k==="arrowleft")keys.left=true;
+  if(k==="arrowright")keys.right=true;
+  if(k==="arrowup")keys.up=true;
+  if(k==="arrowdown")keys.down=true;
+  keys[k]=true;
+  if(k==="enter"&&!running)startGame();
+});
+
+document.addEventListener("keyup",e=>{
+  const k=e.key.toLowerCase();
+  if(k==="arrowleft")keys.left=false;
+  if(k==="arrowright")keys.right=false;
+  if(k==="arrowup")keys.up=false;
+  if(k==="arrowdown")keys.down=false;
+  keys[k]=false;
+});
+
+init();
+</script>
+</body>
+</html>
